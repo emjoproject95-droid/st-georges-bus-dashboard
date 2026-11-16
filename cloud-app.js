@@ -216,11 +216,18 @@ async function loadRecords() {
   renderRecords($('adminDate').value);
 }
 
+function expenseBreakdownOf(report) { return report.expense_breakdown || { bata: 0, diesel: 0, toll: 0, cleaning: 0 }; }
+function expenseCell(report) {
+  if (!report.expense_breakdown) return '<td class="money negative"><small class="expense-lines">Breakdown not recorded</small><br><b>Total ' + rupees(report.expense_amount) + '</b></td>';
+  const e = expenseBreakdownOf(report);
+  return '<td class="money negative"><small class="expense-lines">Bata ' + rupees(e.bata) + ' · Diesel ' + rupees(e.diesel) + '<br>Toll ' + rupees(e.toll) + ' · Cleaning ' + rupees(e.cleaning) + '</small><br><b>Total ' + rupees(report.expense_amount) + '</b></td>';
+}
+
 function renderRecords(date) {
   shownRows = allReports.filter(r => r.service_date === date);
   const sumC = shownRows.reduce((a, r) => a + Number(r.collection_amount), 0), sumE = shownRows.reduce((a, r) => a + Number(r.expense_amount), 0);
   $('sumCollections').textContent = rupees(sumC); $('sumExpenses').textContent = rupees(sumE); $('sumNet').textContent = rupees(sumC - sumE); $('sumCount').textContent = shownRows.length;
-  $('records').innerHTML = shownRows.length ? shownRows.map(r => `<tr><td>${escapeHtml(r.service_date)}</td><td><b>${escapeHtml(r.bus_number)}</b><br><small>${escapeHtml(r.route)}</small></td><td>${escapeHtml(r.driver_name)}</td><td class="money positive">${rupees(r.collection_amount)}</td><td class="money negative">${rupees(r.expense_amount)}</td><td class="money positive">${rupees(Number(r.collection_amount) - Number(r.expense_amount))}</td><td><button class="details-btn" data-bus="${escapeHtml(r.bus_number)}">Daily details</button></td></tr>`).join('') : '<tr><td colspan="7" class="empty">No bus reports for this date yet.</td></tr>';
+  $('records').innerHTML = shownRows.length ? shownRows.map(r => `<tr><td>${escapeHtml(r.service_date)}</td><td><b>${escapeHtml(r.bus_number)}</b><br><small>${escapeHtml(r.route)}</small></td><td>${escapeHtml(r.driver_name)}</td><td class="money positive">${rupees(r.collection_amount)}</td>${expenseCell(r)}<td class="money positive">${rupees(Number(r.collection_amount) - Number(r.expense_amount))}</td><td><button class="details-btn" data-bus="${escapeHtml(r.bus_number)}">Daily details</button></td></tr>`).join('') : '<tr><td colspan="7" class="empty">No bus reports for this date yet.</td></tr>';
 }
 
 function loadBuses() {
@@ -233,30 +240,40 @@ function loadBuses() {
 function openBusDetails(bus) {
   const rows = allReports.filter(r => r.bus_number === bus).sort((a, b) => b.service_date.localeCompare(a.service_date));
   const totalC = rows.reduce((s, r) => s + Number(r.collection_amount), 0), totalE = rows.reduce((s, r) => s + Number(r.expense_amount), 0);
+  const expenseTotals = rows.reduce((sum, r) => { const e = expenseBreakdownOf(r); sum.bata += Number(e.bata || 0); sum.diesel += Number(e.diesel || 0); sum.toll += Number(e.toll || 0); sum.cleaning += Number(e.cleaning || 0); return sum; }, { bata: 0, diesel: 0, toll: 0, cleaning: 0 });
+  const breakdownSummary = 'Bata ' + rupees(expenseTotals.bata) + ' · Diesel ' + rupees(expenseTotals.diesel) + ' · Toll ' + rupees(expenseTotals.toll) + ' · Cleaning ' + rupees(expenseTotals.cleaning);
+  const historyRows = rows.length ? rows.map(r => '<tr><td>' + escapeHtml(r.service_date) + '</td><td>' + escapeHtml(r.route) + '</td><td>' + escapeHtml(r.driver_name) + '</td><td class="money positive">' + rupees(r.collection_amount) + '</td>' + expenseCell(r) + '<td class="money positive">' + rupees(Number(r.collection_amount) - Number(r.expense_amount)) + '</td></tr>').join('') : '<tr><td colspan="6" class="empty">No reports for this bus yet.</td></tr>';
   $('busDetails').hidden = false; $('busDetailTitle').textContent = 'Bus ' + bus + ' · daily dashboard'; $('busDetailSubtitle').textContent = rows.length + ' daily reports · all recorded dates';
-  $('busDetailBody').innerHTML = '<div class="detail-stats"><div class="detail-stat"><small>All-time collections</small><b>' + rupees(totalC) + '</b></div><div class="detail-stat"><small>All-time expenses</small><b>' + rupees(totalE) + '</b></div><div class="detail-stat"><small>All-time net</small><b>' + rupees(totalC - totalE) + '</b></div></div><div class="tablewrap"><table class="table"><thead><tr><th>Service date</th><th>Route</th><th>Driver</th><th>Collections</th><th>Expenses</th><th>Net</th></tr></thead><tbody>' + (rows.length ? rows.map(r => '<tr><td>' + escapeHtml(r.service_date) + '</td><td>' + escapeHtml(r.route) + '</td><td>' + escapeHtml(r.driver_name) + '</td><td class="money positive">' + rupees(r.collection_amount) + '</td><td class="money negative">' + rupees(r.expense_amount) + '</td><td class="money positive">' + rupees(Number(r.collection_amount) - Number(r.expense_amount)) + '</td></tr>').join('') : '<tr><td colspan="6" class="empty">No reports for this bus yet.</td></tr>') + '</tbody></table></div>';
+  $('busDetailBody').innerHTML = '<div class="detail-stats"><div class="detail-stat"><small>All-time collections</small><b>' + rupees(totalC) + '</b></div><div class="detail-stat"><small>All-time expenses</small><b>' + rupees(totalE) + '</b><small class="expense-lines">' + breakdownSummary + '</small></div><div class="detail-stat"><small>All-time net</small><b>' + rupees(totalC - totalE) + '</b></div></div><div class="tablewrap"><table class="table"><thead><tr><th>Service date</th><th>Route</th><th>Driver</th><th>Collections</th><th>Expenses by category · total</th><th>Net</th></tr></thead><tbody>' + historyRows + '</tbody></table></div>';
   $('busDetails').scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
-
 $('records').addEventListener('click', event => { const button = event.target.closest('[data-bus]'); if (button) openBusDetails(button.dataset.bus); });
 $('busDirectory').addEventListener('click', event => { const button = event.target.closest('[data-bus]'); if (button) openBusDetails(button.dataset.bus); });
 $('closeBusDetails').addEventListener('click', () => $('busDetails').hidden = true);
 $('adminDate').addEventListener('change', () => renderRecords($('adminDate').value));
 $('refresh').addEventListener('click', async () => { await loadRecords(); loadBuses(); });
 
+for (const id of ['expenseBata', 'expenseDiesel', 'expenseToll', 'expenseCleaning']) $(id).addEventListener('input', updateExpenseTotal);
+function updateExpenseTotal() {
+  const total = ['expenseBata', 'expenseDiesel', 'expenseToll', 'expenseCleaning'].reduce((sum, id) => sum + Number($(id).value || 0), 0);
+  $('expenseTotal').textContent = rupees(total);
+}
+
 $('reportForm').addEventListener('submit', async event => {
   event.preventDefault(); $('submitError').textContent = '';
-  const report = { service_date: $('serviceDate').value, bus_number: $('busNumber').value.trim(), route: $('routeName').value.trim(), driver_name: $('driverName').value.trim(), collection_amount: Number($('collectionAmount').value), expense_amount: Number($('expenseAmount').value) };
+  const expense_breakdown = { bata: Number($('expenseBata').value || 0), diesel: Number($('expenseDiesel').value || 0), toll: Number($('expenseToll').value || 0), cleaning: Number($('expenseCleaning').value || 0) };
+  const expense_amount = Object.values(expense_breakdown).reduce((sum, amount) => sum + amount, 0);
+  const report = { service_date: $('serviceDate').value, bus_number: $('busNumber').value.trim(), route: $('routeName').value.trim(), driver_name: $('driverName').value.trim(), collection_amount: Number($('collectionAmount').value), expense_breakdown, expense_amount };
   try {
     const encrypted = await encryptReport(report);
     await tableRequest('encrypted_daily_reports', 'POST', '', encrypted, 'return=minimal');
-    toast('Encrypted report saved to St George’s'); $('reportForm').reset(); $('serviceDate').value = dateLocal();
+    toast('Encrypted report saved to St George’s'); $('reportForm').reset(); $('serviceDate').value = dateLocal(); updateExpenseTotal();
   } catch (error) { $('submitError').textContent = error.message || 'Could not encrypt or submit this report.'; }
 });
 
 $('export').addEventListener('click', () => {
-  const columns = ['service_date','bus_number','route','driver_name','collection_amount','expense_amount','net_amount'];
-  const rows = [columns, ...shownRows.map(r => [r.service_date,r.bus_number,r.route,r.driver_name,r.collection_amount,r.expense_amount,Number(r.collection_amount)-Number(r.expense_amount)])];
+  const columns = ['service_date','bus_number','route','driver_name','collection_amount','expense_bata','expense_diesel','expense_toll','expense_cleaning','expense_total','net_amount'];
+  const rows = [columns, ...shownRows.map(r => { const e = expenseBreakdownOf(r); return [r.service_date,r.bus_number,r.route,r.driver_name,r.collection_amount,e.bata,e.diesel,e.toll,e.cleaning,r.expense_amount,Number(r.collection_amount)-Number(r.expense_amount)]; })];
   const csv = rows.map(row => row.map(value => '"' + String(value).replaceAll('"', '""') + '"').join(',')).join('\n');
   const link = document.createElement('a'); link.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' })); link.download = 'st-georges-bus-collections-' + $('adminDate').value + '.csv'; link.click(); URL.revokeObjectURL(link.href);
 });
