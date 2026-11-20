@@ -3,7 +3,7 @@
 const $ = id => document.getElementById(id);
 const toastEl = $('toast');
 let projectConfig = null, authSession = null, currentUser = null, currentRole = null;
-let keyBundle = null, publicKey = null, privateKey = null, allReports = [], shownRows = [], adminLockTimer = null;
+let keyBundle = null, publicKey = null, privateKey = null, allReports = [], shownRows = [], adminLockTimer = null, currentEditingId = null, editingLegacyExpense = 0;
 const configKey = 'st-georges-supabase-public-config-v1';
 const defaultConfig = {
   url: 'https://vgfmzydepdszahrgcdvh.supabase.co',
@@ -220,14 +220,16 @@ function expenseBreakdownOf(report) { return report.expense_breakdown || { bata:
 function expenseCell(report) {
   if (!report.expense_breakdown) return '<td class="money negative"><small class="expense-lines">Breakdown not recorded</small><br><b>Total ' + rupees(report.expense_amount) + '</b></td>';
   const e = expenseBreakdownOf(report);
-  return '<td class="money negative"><small class="expense-lines">Bata ' + rupees(e.bata) + ' | Diesel ' + rupees(e.diesel) + ' | Toll ' + rupees(e.toll) + ' | Cleaning ' + rupees(e.cleaning) + '<br>Chitty ' + rupees(e.chitty) + ' | Gap ' + rupees(e.gap) + ' | Office ' + rupees(e.office) + ' | BALANCE ' + rupees(e.balance) + '</small><br><b>Total ' + rupees(report.expense_amount) + '</b></td>';
+  const legacy = Number(report.legacy_expense_amount || 0);
+  const legacyLine = legacy ? '<br>Unitemized ' + rupees(legacy) : '';
+  return '<td class="money negative"><small class="expense-lines">Bata ' + rupees(e.bata) + ' | Diesel ' + rupees(e.diesel) + ' | Toll ' + rupees(e.toll) + ' | Cleaning ' + rupees(e.cleaning) + '<br>Chitty ' + rupees(e.chitty) + ' | Gap ' + rupees(e.gap) + ' | Office ' + rupees(e.office) + ' | BALANCE ' + rupees(e.balance) + legacyLine + '</small><br><b>Total ' + rupees(report.expense_amount) + '</b></td>';
 }
 
 function renderRecords(date) {
   shownRows = allReports.filter(r => r.service_date === date);
   const sumC = shownRows.reduce((a, r) => a + Number(r.collection_amount), 0), sumE = shownRows.reduce((a, r) => a + Number(r.expense_amount), 0); const sumDayBalance = shownRows.reduce((a, r) => a + Number(r.collection_amount) - Number(r.expense_amount), 0);
   $('sumCollections').textContent = rupees(sumC); $('sumExpenses').textContent = rupees(sumE); $('sumDayBalance').textContent = rupees(sumDayBalance); $('sumCount').textContent = shownRows.length;
-  $('records').innerHTML = shownRows.length ? shownRows.map(r => `<tr><td>${escapeHtml(r.service_date)}</td><td><b>${escapeHtml(r.bus_number)}</b><br><small>${escapeHtml(r.route)}</small></td><td>${escapeHtml(r.driver_name)}</td><td class="money positive">${rupees(r.collection_amount)}</td>${expenseCell(r)}<td class="money positive">${rupees(Number(r.collection_amount) - Number(r.expense_amount))}</td><td><button class="details-btn" data-bus="${escapeHtml(r.bus_number)}">Daily details</button></td><td><button class="remove-btn" data-delete-id="${escapeHtml(r.id)}" data-bus="${escapeHtml(r.bus_number)}">Remove</button></td></tr>`).join('') : '<tr><td colspan="7" class="empty">No bus reports for this date yet.</td></tr>';
+  $('records').innerHTML = shownRows.length ? shownRows.map(r => `<tr><td>${escapeHtml(r.service_date)}</td><td><b>${escapeHtml(r.bus_number)}</b><br><small>${escapeHtml(r.route)}</small></td><td>${escapeHtml(r.driver_name)}</td><td class="money positive">${rupees(r.collection_amount)}</td>${expenseCell(r)}<td class="money positive">${rupees(Number(r.collection_amount) - Number(r.expense_amount))}</td><td><button class="details-btn" data-bus="${escapeHtml(r.bus_number)}">Daily details</button></td><td><button class="edit-btn" data-edit-id="${escapeHtml(r.id)}">Edit</button></td><td><button class="remove-btn" data-delete-id="${escapeHtml(r.id)}" data-bus="${escapeHtml(r.bus_number)}">Remove</button></td></tr>`).join('') : '<tr><td colspan="9" class="empty">No bus reports for this date yet.</td></tr>';
 }
 
 function loadBuses() {
@@ -242,13 +244,58 @@ function openBusDetails(bus) {
   const totalC = rows.reduce((s, r) => s + Number(r.collection_amount), 0), totalE = rows.reduce((s, r) => s + Number(r.expense_amount), 0);
   const expenseTotals = rows.reduce((sum, r) => { const e = expenseBreakdownOf(r); sum.bata += Number(e.bata || 0); sum.diesel += Number(e.diesel || 0); sum.toll += Number(e.toll || 0); sum.cleaning += Number(e.cleaning || 0); sum.chitty += Number(e.chitty || 0); sum.gap += Number(e.gap || 0); sum.office += Number(e.office || 0); sum.balance += Number(e.balance || 0); return sum; }, { bata: 0, diesel: 0, toll: 0, cleaning: 0, chitty: 0, gap: 0, office: 0, balance: 0 });
   const breakdownSummary = 'Bata ' + rupees(expenseTotals.bata) + ' · Diesel ' + rupees(expenseTotals.diesel) + ' · Toll ' + rupees(expenseTotals.toll) + ' · Cleaning ' + rupees(expenseTotals.cleaning) + ' · Chitty ' + rupees(expenseTotals.chitty) + ' · Gap ' + rupees(expenseTotals.gap) + ' · Office ' + rupees(expenseTotals.office) + ' · BALANCE ' + rupees(expenseTotals.balance);
-  const historyRows = rows.length ? rows.map(r => '<tr><td>' + escapeHtml(r.service_date) + '</td><td>' + escapeHtml(r.route) + '</td><td>' + escapeHtml(r.driver_name) + '</td><td class="money positive">' + rupees(r.collection_amount) + '</td>' + expenseCell(r) + '<td class="money positive">' + rupees(Number(r.collection_amount) - Number(r.expense_amount)) + '</td><td><button class="remove-btn" data-delete-id="' + escapeHtml(r.id) + '" data-bus="' + escapeHtml(r.bus_number) + '">Remove</button></td></tr>').join('') : '<tr><td colspan="7" class="empty">No reports for this bus yet.</td></tr>';
+  const historyRows = rows.length ? rows.map(r => '<tr><td>' + escapeHtml(r.service_date) + '</td><td>' + escapeHtml(r.route) + '</td><td>' + escapeHtml(r.driver_name) + '</td><td class="money positive">' + rupees(r.collection_amount) + '</td>' + expenseCell(r) + '<td class="money positive">' + rupees(Number(r.collection_amount) - Number(r.expense_amount)) + '</td><td><button class="edit-btn" data-edit-id="' + escapeHtml(r.id) + '">Edit</button></td><td><button class="remove-btn" data-delete-id="' + escapeHtml(r.id) + '" data-bus="' + escapeHtml(r.bus_number) + '">Remove</button></td></tr>').join('') : '<tr><td colspan="8" class="empty">No reports for this bus yet.</td></tr>';
   $('busDetails').hidden = false; $('busDetailTitle').textContent = 'Bus ' + bus + ' · daily dashboard'; $('busDetailSubtitle').textContent = rows.length + ' daily reports · all recorded dates';
-  $('busDetailBody').innerHTML = '<div class="detail-stats"><div class="detail-stat"><small>All-time collections</small><b>' + rupees(totalC) + '</b></div><div class="detail-stat"><small>All-time expenses</small><b>' + rupees(totalE) + '</b><small class="expense-lines">' + breakdownSummary + '</small></div></div><div class="tablewrap"><table class="table"><thead><tr><th>Service date</th><th>Route</th><th>Driver</th><th>Collections</th><th>Expenses by category · total</th><th>Daily net balance</th><th>Remove</th></tr></thead><tbody>' + historyRows + '</tbody></table></div>';
+  $('busDetailBody').innerHTML = '<div class="detail-stats"><div class="detail-stat"><small>All-time collections</small><b>' + rupees(totalC) + '</b></div><div class="detail-stat"><small>All-time expenses</small><b>' + rupees(totalE) + '</b><small class="expense-lines">' + breakdownSummary + '</small></div></div><div class="tablewrap"><table class="table"><thead><tr><th>Service date</th><th>Route</th><th>Driver</th><th>Collections</th><th>Expenses by category · total</th><th>Daily net balance</th><th>Edit</th><th>Remove</th></tr></thead><tbody>' + historyRows + '</tbody></table></div>';
   $('busDetails').scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
-$('records').addEventListener('click', event => { const remove = event.target.closest('[data-delete-id]'); if (remove) { removeReport(remove.dataset.deleteId, remove.dataset.bus); return; } const button = event.target.closest('[data-bus]'); if (button) openBusDetails(button.dataset.bus); });
-$('busDetails').addEventListener('click', event => { const remove = event.target.closest('[data-delete-id]'); if (remove) removeReport(remove.dataset.deleteId, remove.dataset.bus); });
+
+const editExpenseIds = ['Bata','Diesel','Toll','Cleaning','Chitty','Gap','Office','Balance'];
+function openEditReport(id) {
+  const report = allReports.find(r => r.id === id); if (!report) return;
+  currentEditingId = id;
+  $('editServiceDate').value = report.service_date;
+  $('editBusNumber').value = report.bus_number;
+  $('editRoute').value = report.route;
+  $('editDriverName').value = report.driver_name;
+  $('editCollection').value = report.collection_amount;
+  const breakdown = report.expense_breakdown || { bata: 0, diesel: 0, toll: 0, cleaning: 0, chitty: 0, gap: 0, office: 0, balance: 0 };
+  for (const name of editExpenseIds) $('editExpense' + name).value = Number(breakdown[name.toLowerCase()] || 0) || '';
+  editingLegacyExpense = report.expense_breakdown ? Number(report.legacy_expense_amount || 0) : Number(report.expense_amount || 0);
+  $('editLegacyNotice').hidden = !editingLegacyExpense;
+  $('editLegacyNotice').textContent = editingLegacyExpense ? 'This older report has no itemized breakdown. Its existing unitemized expense of ' + rupees(editingLegacyExpense) + ' will be preserved in the total.' : '';
+  $('editError').textContent = '';
+  updateEditExpenseTotal();
+  $('editOverlay').hidden = false;
+}
+function updateEditExpenseTotal() {
+  const total = editExpenseIds.reduce((sum, name) => sum + Number($('editExpense' + name).value || 0), editingLegacyExpense);
+  $('editExpenseTotal').textContent = rupees(total);
+}
+for (const name of editExpenseIds) $('editExpense' + name).addEventListener('input', updateEditExpenseTotal);
+function closeEditReport() { $('editOverlay').hidden = true; currentEditingId = null; editingLegacyExpense = 0; }
+$('cancelEdit').addEventListener('click', closeEditReport);
+$('editReportForm').addEventListener('submit', async event => {
+  event.preventDefault(); $('editError').textContent = '';
+  const old = allReports.find(r => r.id === currentEditingId); if (!old) return;
+  const expense_breakdown = { bata: Number($('editExpenseBata').value || 0), diesel: Number($('editExpenseDiesel').value || 0), toll: Number($('editExpenseToll').value || 0), cleaning: Number($('editExpenseCleaning').value || 0), chitty: Number($('editExpenseChitty').value || 0), gap: Number($('editExpenseGap').value || 0), office: Number($('editExpenseOffice').value || 0), balance: Number($('editExpenseBalance').value || 0) };
+  const expense_amount = Object.values(expense_breakdown).reduce((sum, amount) => sum + amount, editingLegacyExpense);
+  const report = { service_date: $('editServiceDate').value, bus_number: $('editBusNumber').value.trim(), route: $('editRoute').value.trim(), driver_name: $('editDriverName').value.trim(), collection_amount: Number($('editCollection').value), expense_breakdown, expense_amount };
+  if (editingLegacyExpense) report.legacy_expense_amount = editingLegacyExpense;
+  $('saveEdit').disabled = true;
+  try {
+    const encrypted = await encryptReport(report);
+    await tableRequest('encrypted_daily_reports', 'PATCH', '?id=eq.' + encodeURIComponent(currentEditingId), encrypted, 'return=minimal');
+    allReports = allReports.map(r => r.id === currentEditingId ? { ...report, id: old.id, submitted_by: old.submitted_by, created_at: old.created_at } : r);
+    const bus = report.bus_number; closeEditReport(); renderRecords($('adminDate').value); loadBuses();
+    if (!$('busDetails').hidden) openBusDetails(bus);
+    toast('Daily report updated');
+  } catch (error) { $('editError').textContent = error.message || 'Could not update the report.'; }
+  finally { $('saveEdit').disabled = false; }
+});
+
+$('records').addEventListener('click', event => { const edit = event.target.closest('[data-edit-id]'); if (edit) { openEditReport(edit.dataset.editId); return; } const remove = event.target.closest('[data-delete-id]'); if (remove) { removeReport(remove.dataset.deleteId, remove.dataset.bus); return; } const button = event.target.closest('[data-bus]'); if (button) openBusDetails(button.dataset.bus); });
+$('busDetails').addEventListener('click', event => { const edit = event.target.closest('[data-edit-id]'); if (edit) { openEditReport(edit.dataset.editId); return; } const remove = event.target.closest('[data-delete-id]'); if (remove) removeReport(remove.dataset.deleteId, remove.dataset.bus); });
 async function removeReport(id, bus) {
   const report = allReports.find(r => r.id === id); if (!report) return;
   if (!confirm('Remove the daily report for bus ' + bus + ' on ' + report.service_date + '? This cannot be undone.')) return;
