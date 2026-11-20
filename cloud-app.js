@@ -225,8 +225,8 @@ function expenseCell(report) {
 
 function renderRecords(date) {
   shownRows = allReports.filter(r => r.service_date === date);
-  const sumC = shownRows.reduce((a, r) => a + Number(r.collection_amount), 0), sumE = shownRows.reduce((a, r) => a + Number(r.expense_amount), 0);
-  $('sumCollections').textContent = rupees(sumC); $('sumExpenses').textContent = rupees(sumE); $('sumCount').textContent = shownRows.length;
+  const sumC = shownRows.reduce((a, r) => a + Number(r.collection_amount), 0), sumE = shownRows.reduce((a, r) => a + Number(r.expense_amount), 0); const sumDayBalance = shownRows.reduce((a, r) => a + Number(r.collection_amount) - Number(r.expense_amount), 0);
+  $('sumCollections').textContent = rupees(sumC); $('sumExpenses').textContent = rupees(sumE); $('sumDayBalance').textContent = rupees(sumDayBalance); $('sumCount').textContent = shownRows.length;
   $('records').innerHTML = shownRows.length ? shownRows.map(r => `<tr><td>${escapeHtml(r.service_date)}</td><td><b>${escapeHtml(r.bus_number)}</b><br><small>${escapeHtml(r.route)}</small></td><td>${escapeHtml(r.driver_name)}</td><td class="money positive">${rupees(r.collection_amount)}</td>${expenseCell(r)}<td class="money positive">${rupees(Number(r.collection_amount) - Number(r.expense_amount))}</td><td><button class="details-btn" data-bus="${escapeHtml(r.bus_number)}">Daily details</button></td><td><button class="remove-btn" data-delete-id="${escapeHtml(r.id)}" data-bus="${escapeHtml(r.bus_number)}">Remove</button></td></tr>`).join('') : '<tr><td colspan="7" class="empty">No bus reports for this date yet.</td></tr>';
 }
 
